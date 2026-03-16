@@ -1,3 +1,4 @@
+use display_info::DisplayInfo;
 use iced::widget::{button, center, container, text};
 use iced::window;
 use iced::{Element, Length, Point, Size, Subscription, Task, Theme, keyboard};
@@ -26,7 +27,6 @@ enum Message {
     WindowOpened(window::Id, WindowType),
     WindowClosed(window::Id),
     EventOccurred(iced::Event),
-    OverlayMonitorSize(window::Id, Size),
 }
 
 impl App {
@@ -61,17 +61,13 @@ impl App {
                 self.overlay_pending = true;
 
                 let (_, open) = window::open(window::Settings {
-                    // 不使用 fullscreen，避免全屏切换动画
                     decorations: false,
                     transparent: true,
                     resizable: false,
                     level: window::Level::AlwaysOnTop,
                     visible: true,
-
-                    // 先给个初始值，后面在 WindowOpened 后再精确 resize
-                    size: Size::new(800.0, 600.0),
+                    size: Size::new(100.0, 100.0),
                     position: window::Position::Specific(Point::new(0.0, 0.0)),
-
                     ..window::Settings::default()
                 });
 
@@ -84,25 +80,33 @@ impl App {
                 if window_type == WindowType::Overlay {
                     self.overlay_pending = false;
 
-                    // 创建后立刻移到左上角，再查询显示器大小并 resize
-                    Task::batch(vec![
-                        window::move_to(id, Point::new(0.0, 0.0)),
-                        window::monitor_size(id)
-                            .map(move |size| Message::OverlayMonitorSize(id, size.unwrap())),
-                    ])
-                } else {
-                    Task::none()
-                }
-            }
+                    if let Ok(displays) = DisplayInfo::all() {
+                        if let Some(primary_display) = displays.into_iter().find(|d| d.is_primary) {
+                            let scale_factor = primary_display.scale_factor;
 
-            Message::OverlayMonitorSize(id, size) => Task::batch(vec![
-                window::move_to(id, Point::new(0.0, 0.0)),
-                window::resize(id, size),
-            ]),
+                            let monitor_size = Size::new(
+                                (primary_display.width as f32) / scale_factor,
+                                (primary_display.height as f32) / scale_factor,
+                            );
+
+                            let position = Point::new(
+                                (primary_display.x as f32) / scale_factor,
+                                (primary_display.y as f32) / scale_factor,
+                            );
+
+                            return Task::batch(vec![
+                                window::move_to(id, position),
+                                window::resize(id, monitor_size),
+                            ]);
+                        }
+                    }
+                }
+
+                Task::none()
+            }
 
             Message::WindowClosed(id) => {
                 self.windows.remove(&id);
-
                 if self.windows.is_empty() {
                     iced::exit()
                 } else {
@@ -136,7 +140,7 @@ impl App {
     fn view(&self, window_id: window::Id) -> Element<'_, Message> {
         match self.windows.get(&window_id) {
             Some(WindowType::Main) => {
-                center(button("Create").on_press(Message::OpenOverlay)).into()
+                center(button("Create Overlay").on_press(Message::OpenOverlay)).into()
             }
 
             Some(WindowType::Overlay) => {

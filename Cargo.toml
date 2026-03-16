@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 iced = "0.14.0"
+display-info = "0.5.8"
 winit = { version = "0.30.13", features = ["rwh_06"] }
