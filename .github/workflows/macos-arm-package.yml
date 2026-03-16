@@ -1,0 +1,56 @@
+name: macOS ARM Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-arm:
+    name: Build macOS ARM64 Package
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Cargo artifacts
+        uses: swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Package binary
+        shell: bash
+        run: |
+          APP_NAME=$(grep '^name' Cargo.toml | head -n1 | cut -d '"' -f2)
+          APP_VERSION=$(grep '^version' Cargo.toml | head -n1 | cut -d '"' -f2)
+          mkdir -p dist
+          cp "target/aarch64-apple-darwin/release/${APP_NAME}" "dist/${APP_NAME}"
+          chmod +x "dist/${APP_NAME}"
+          cd dist
+          zip "${APP_NAME}-macos-arm64-v${APP_VERSION}.zip" "${APP_NAME}"
+
+      - name: Upload workflows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-package
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
